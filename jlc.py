@@ -526,89 +526,6 @@ def get_user_nickname_from_api(driver, account_index):
         log(f"账号 {account_index} - ⚠ 获取用户昵称失败: {e}")
         return None
 
-def ensure_login_page(driver, account_index):
-    """确保进入登录页面，如果未检测到登录页面则重启浏览器"""
-    max_restarts = 5
-    restarts = 0
-    
-    while restarts < max_restarts:
-        try:
-            driver.get("https://passport.jlc.com/login?appId=JLC_OSHWHUB&redirectUrl=https%3A%2F%2Foshwhub.com%2Fsign_in&backCode=1")
-            log(f"账号 {account_index} - 已打开 JLC 登录页")
-            
-            # 等待页面加载
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            current_url = driver.current_url
-
-            # 检查是否在登录页面
-            if "passport.jlc.com" in current_url:
-                log(f"账号 {account_index} - ✅ 检测到登录页面")
-                return True
-            else:
-                restarts += 1
-                if restarts < max_restarts:
-                    # 静默重启浏览器
-                    driver.quit()
-                    
-                    # 重新初始化浏览器
-                    chrome_options = Options()
-                    chrome_options.add_argument("--headless=new")
-                    chrome_options.add_argument("--no-sandbox")
-                    chrome_options.add_argument("--disable-dev-shm-usage")
-                    chrome_options.add_argument("--disable-gpu")
-                    chrome_options.add_argument("--window-size=1920,1080")
-                    chrome_options.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")
-                    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-                    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-                    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                    chrome_options.add_experimental_option('useAutomationExtension', False)
-
-                    caps = DesiredCapabilities.CHROME
-                    caps['goog:loggingPrefs'] = {'performance': 'ALL'}
-                    
-                    driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
-                    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                    
-                    # 静默等待后继续循环
-                    time.sleep(2)
-                else:
-                    log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍无法进入登录页面")
-                    return False
-                    
-        except Exception as e:
-            restarts += 1
-            if restarts < max_restarts:
-                try:
-                    driver.quit()
-                except:
-                    pass
-                
-                # 重新初始化浏览器
-                chrome_options = Options()
-                chrome_options.add_argument("--headless=new")
-                chrome_options.add_argument("--no-sandbox")
-                chrome_options.add_argument("--disable-dev-shm-usage")
-                chrome_options.add_argument("--disable-gpu")
-                chrome_options.add_argument("--window-size=1920,1080")
-                chrome_options.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")
-                chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-                chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                chrome_options.add_experimental_option('useAutomationExtension', False)
-
-                caps = DesiredCapabilities.CHROME
-                caps['goog:loggingPrefs'] = {'performance': 'ALL'}
-                
-                driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
-                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                
-                time.sleep(2)
-            else:
-                log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍出现异常: {e}")
-                return False
-    
-    return False
-
 def check_password_error(driver, account_index):
     """检查页面是否显示密码错误提示"""
     try:
@@ -697,15 +614,14 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     }
 
     try:
-        # 1. 确保进入登录页面
-        if not ensure_login_page(driver, account_index):
-            result['oshwhub_status'] = '无法进入登录页'
-            return result
-
-        current_url = driver.current_url
+        # 1. 直接打开登录页面
+        login_url = "https://passport.jlc.com/login?appId=JLC_OSHWHUB&redirectUrl=https%3A%2F%2Foshwhub.com%2Fsign_in&backCode=1"
+        driver.get(login_url)
+        log(f"账号 {account_index} - 已打开登录页面")
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
         # 2. 登录流程
-        log(f"账号 {account_index} - 检测到未登录状态，正在执行登录流程...")
+        log(f"账号 {account_index} - 正在执行登录流程...")
 
         try:
             phone_btn = wait.until(
@@ -749,16 +665,15 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             return result
 
         # 立即检查密码错误提示（点击登录按钮后）
-        time.sleep(1)  # 给错误提示一点时间显示
+        time.sleep(1)
         if check_password_error(driver, account_index):
             result['password_error'] = True
             result['oshwhub_status'] = '密码错误'
             return result
 
         # 处理滑块验证
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".btn_slide")))
         try:
-            slider = wait.until(
+            slider = WebDriverWait(driver, 8).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn_slide"))
             )
             
@@ -790,42 +705,30 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             actions.release().perform()
             log(f"账号 {account_index} - 滑块拖动完成")
             
-            # 滑块验证后立即检查密码错误提示
-            time.sleep(1)  # 给错误提示一点时间显示
+            # 滑块后再次检查密码错误
+            time.sleep(1)
             if check_password_error(driver, account_index):
                 result['password_error'] = True
                 result['oshwhub_status'] = '密码错误'
                 return result
                 
-            WebDriverWait(driver, 10).until(lambda d: "oshwhub.com" in d.current_url and "passport.jlc.com" not in d.current_url)
-            
         except Exception as e:
-            log(f"账号 {account_index} - 滑块验证处理: {e}")
-            # 滑块验证失败后检查密码错误
-            time.sleep(1)
-            if check_password_error(driver, account_index):
-                result['password_error'] = True
-                result['oshwhub_status'] = '密码错误'
-                return result
+            log(f"账号 {account_index} - 无滑块验证码或滑块处理异常: {e}")
 
-        # 等待跳转
-        log(f"账号 {account_index} - 等待登录跳转...")
-        max_wait = 15
+        # 等待登录后跳转到签到页
+        log(f"账号 {account_index} - 等待登录后跳转到签到页面...")
+        max_wait = 20
         jumped = False
         for i in range(max_wait):
             current_url = driver.current_url
-            
-            # 检查是否成功跳转回签到页面
-            if "oshwhub.com" in current_url and "passport.jlc.com" not in current_url:
-                log(f"账号 {account_index} - 成功跳转回签到页面")
+            if "oshwhub.com/sign_in" in current_url or "oshwhub.com" in current_url and "passport.jlc.com" not in current_url:
+                log(f"账号 {account_index} - ✅ 成功跳转到签到页面")
                 jumped = True
                 break
-            
             time.sleep(1)
         
         if not jumped:
-            current_title = driver.title
-            log(f"账号 {account_index} - ❌ 跳转超时，当前页面标题: {current_title}")
+            log(f"账号 {account_index} - ❌ 登录后跳转超时，当前URL: {driver.current_url}")
             result['oshwhub_status'] = '跳转失败'
             return result
 
