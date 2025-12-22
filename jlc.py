@@ -533,8 +533,8 @@ def ensure_login_page(driver, account_index):
     
     while restarts < max_restarts:
         try:
-            driver.get("https://oshwhub.com/sign_in")
-            log(f"账号 {account_index} - 已打开 JLC 签到页")
+            driver.get("https://passport.jlc.com/login?appId=JLC_OSHWHUB&redirectUrl=https%3A%2F%2Foshwhub.com%2Fsign_in&backCode=1")
+            log(f"账号 {account_index} - 已直接打开 JLC 登录页")
             
             WebDriverWait(driver, 10).until(lambda d: "passport.jlc.com/login" in d.current_url)
             current_url = driver.current_url
@@ -542,7 +542,7 @@ def ensure_login_page(driver, account_index):
             # 检查是否在登录页面
             if "passport.jlc.com/login" in current_url:
                 log(f"账号 {account_index} - ✅ 检测到未登录状态")
-                return True, driver
+                return True
             else:
                 restarts += 1
                 if restarts < max_restarts:
@@ -561,21 +561,18 @@ def ensure_login_page(driver, account_index):
                     chrome_options.add_argument("--blink-settings=imagesEnabled=false")
                     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
                     chrome_options.add_experimental_option('useAutomationExtension', False)
-                    chrome_options.page_load_strategy = 'eager'
 
                     caps = DesiredCapabilities.CHROME
                     caps['goog:loggingPrefs'] = {'performance': 'ALL'}
                     
                     driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
-                    driver.set_page_load_timeout(30)
-                    driver.set_script_timeout(30)
                     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                     
                     # 静默等待后继续循环
                     time.sleep(2)
                 else:
                     log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍无法进入登录页面")
-                    return False, driver
+                    return False
                     
         except Exception as e:
             restarts += 1
@@ -597,22 +594,19 @@ def ensure_login_page(driver, account_index):
                 chrome_options.add_argument("--blink-settings=imagesEnabled=false")
                 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 chrome_options.add_experimental_option('useAutomationExtension', False)
-                chrome_options.page_load_strategy = 'eager'
 
                 caps = DesiredCapabilities.CHROME
                 caps['goog:loggingPrefs'] = {'performance': 'ALL'}
                 
                 driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
-                driver.set_page_load_timeout(30)
-                driver.set_script_timeout(30)
                 driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 
                 time.sleep(2)
             else:
                 log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍出现异常: {e}")
-                return False, driver
+                return False
     
-    return False, driver
+    return False
 
 def check_password_error(driver, account_index):
     """检查页面是否显示密码错误提示"""
@@ -669,14 +663,11 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     chrome_options.add_argument("--blink-settings=imagesEnabled=false")  # 禁用图像加载
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.page_load_strategy = 'eager'
 
     caps = DesiredCapabilities.CHROME
     caps['goog:loggingPrefs'] = {'performance': 'ALL'}
     
     driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
-    driver.set_page_load_timeout(30)
-    driver.set_script_timeout(30)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     wait = WebDriverWait(driver, 25)
@@ -706,8 +697,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
 
     try:
         # 1. 确保进入登录页面
-        success, driver = ensure_login_page(driver, account_index)
-        if not success:
+        if not ensure_login_page(driver, account_index):
             result['oshwhub_status'] = '无法进入登录页'
             return result
 
