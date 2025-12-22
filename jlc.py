@@ -534,14 +534,15 @@ def ensure_login_page(driver, account_index):
     while restarts < max_restarts:
         try:
             driver.get("https://passport.jlc.com/login?appId=JLC_OSHWHUB&redirectUrl=https%3A%2F%2Foshwhub.com%2Fsign_in&backCode=1")
-            log(f"账号 {account_index} - 已直接打开 JLC 登录页")
+            log(f"账号 {account_index} - 已打开 JLC 登录页")
             
-            WebDriverWait(driver, 10).until(lambda d: "passport.jlc.com/login" in d.current_url)
+            # 等待页面加载
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             current_url = driver.current_url
 
             # 检查是否在登录页面
-            if "passport.jlc.com/login" in current_url:
-                log(f"账号 {account_index} - ✅ 检测到未登录状态")
+            if "passport.jlc.com" in current_url:
+                log(f"账号 {account_index} - ✅ 检测到登录页面")
                 return True
             else:
                 restarts += 1
