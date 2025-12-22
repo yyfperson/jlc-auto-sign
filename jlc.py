@@ -526,6 +526,88 @@ def get_user_nickname_from_api(driver, account_index):
         log(f"账号 {account_index} - ⚠ 获取用户昵称失败: {e}")
         return None
 
+def ensure_login_page(driver, account_index):
+    """确保进入登录页面，如果未检测到登录页面则重启浏览器"""
+    max_restarts = 5
+    restarts = 0
+    
+    while restarts < max_restarts:
+        try:
+            driver.get("https://oshwhub.com/sign_in")
+            log(f"账号 {account_index} - 已打开 JLC 签到页")
+            
+            WebDriverWait(driver, 10).until(lambda d: "passport.jlc.com/login" in d.current_url)
+            current_url = driver.current_url
+
+            # 检查是否在登录页面
+            if "passport.jlc.com/login" in current_url:
+                log(f"账号 {account_index} - ✅ 检测到未登录状态")
+                return True
+            else:
+                restarts += 1
+                if restarts < max_restarts:
+                    # 静默重启浏览器
+                    driver.quit()
+                    
+                    # 重新初始化浏览器
+                    chrome_options = Options()
+                    chrome_options.add_argument("--headless=new")
+                    chrome_options.add_argument("--no-sandbox")
+                    chrome_options.add_argument("--disable-dev-shm-usage")
+                    chrome_options.add_argument("--disable-gpu")
+                    chrome_options.add_argument("--window-size=1920,1080")
+                    chrome_options.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")
+                    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+                    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                    chrome_options.add_experimental_option('useAutomationExtension', False)
+
+                    caps = DesiredCapabilities.CHROME
+                    caps['goog:loggingPrefs'] = {'performance': 'ALL'}
+                    
+                    driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
+                    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                    
+                    # 静默等待后继续循环
+                    time.sleep(2)
+                else:
+                    log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍无法进入登录页面")
+                    return False
+                    
+        except Exception as e:
+            restarts += 1
+            if restarts < max_restarts:
+                try:
+                    driver.quit()
+                except:
+                    pass
+                
+                # 重新初始化浏览器
+                chrome_options = Options()
+                chrome_options.add_argument("--headless=new")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--window-size=1920,1080")
+                chrome_options.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")
+                chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
+
+                caps = DesiredCapabilities.CHROME
+                caps['goog:loggingPrefs'] = {'performance': 'ALL'}
+                
+                driver = webdriver.Chrome(options=chrome_options, desired_capabilities=caps)
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                time.sleep(2)
+            else:
+                log(f"账号 {account_index} - ❌ 重启浏览器{max_restarts}次后仍出现异常: {e}")
+                return False
+    
+    return False
+
 def check_password_error(driver, account_index):
     """检查页面是否显示密码错误提示"""
     try:
@@ -558,74 +640,6 @@ def check_password_error(driver, account_index):
         return False
     except Exception as e:
         log(f"账号 {account_index} - ⚠ 检查密码错误时出现异常: {e}")
-        return False
-
-def solve_aliyun_captcha(driver, account_index):
-    """处理阿里云滑块验证码（拟人化滑动）"""
-    try:
-        # 等待滑块容器出现，通常在点击登录后弹出
-        # 寻找滑块按钮
-        slider = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.ID, "aliyunCaptcha-sliding-slider"))
-        )
-        
-        # 寻找滑块轨道/容器
-        wrapper = driver.find_element(By.ID, "aliyunCaptcha-sliding-wrapper")
-        
-        # 计算需要移动的距离
-        # 提示文本是“请按住滑块，拖动到最右边”，所以距离通常是 容器宽度 - 滑块宽度
-        track_width = wrapper.size['width']
-        slider_width = slider.size['width']
-        distance = track_width - slider_width
-        
-        # 如果获取到的宽度异常，使用默认值或重新获取
-        if distance <= 0:
-            distance = 300  # 假设值
-        
-        log(f"账号 {account_index} - 🛡 检测到阿里云验证码，开始滑动... 距离: {distance}")
-        
-        action = ActionChains(driver)
-        action.click_and_hold(slider).perform()
-        
-        # 拟人化滑动轨迹算法
-        current_pos = 0
-        remain_dist = distance
-        
-        # 第一阶段：加速
-        t = random.uniform(0.2, 0.4)
-        pass1 = int(distance * 0.7) # 前70%路程
-        step1 = int(pass1 / 5) # 分5步
-        
-        for _ in range(5):
-             move = step1 + random.randint(-2, 5)
-             if current_pos + move > distance:
-                 move = distance - current_pos
-             action.move_by_offset(move, random.randint(-1, 1)).perform() # 稍微上下抖动
-             current_pos += move
-             time.sleep(random.uniform(0.01, 0.05))
-        
-        # 第二阶段：减速逼近
-        while current_pos < distance:
-            remain = distance - current_pos
-            if remain < 5:
-                move = remain
-            else:
-                move = random.randint(2, min(10, remain))
-            
-            action.move_by_offset(move, random.randint(-1, 1)).perform()
-            current_pos += move
-            time.sleep(random.uniform(0.03, 0.08))
-            
-        # 稍微等待一下再松开
-        time.sleep(random.uniform(0.2, 0.5))
-        action.release().perform()
-        
-        log(f"账号 {account_index} - 🛡 阿里云验证码滑动完成")
-        return True
-        
-    except Exception as e:
-        # 没检测到滑块是正常的，可能不需要验证
-        # log(f"账号 {account_index} - 未检测到阿里云滑块或滑动异常: {e}")
         return False
 
 def sign_in_account(username, password, account_index, total_accounts, retry_count=0, is_final_retry=False):
@@ -682,15 +696,28 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     }
 
     try:
-        # 1. 直接进入登录页面 (修改点：使用指定URL)
-        login_url = "https://passport.jlc.com/login?appId=JLC_OSHWHUB&redirectUrl=https%3A%2F%2Foshwhub.com%2Fsign_in&backCode=1"
-        driver.get(login_url)
-        log(f"账号 {account_index} - 已打开登录页面")
+        # 1. 确保进入登录页面
+        if not ensure_login_page(driver, account_index):
+            result['oshwhub_status'] = '无法进入登录页'
+            return result
+
+        current_url = driver.current_url
 
         # 2. 登录流程
+        log(f"账号 {account_index} - 检测到未登录状态，正在执行登录流程...")
+
+        try:
+            phone_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, '//button[contains(text(),"账号登录")]'))
+            )
+            phone_btn.click()
+            log(f"账号 {account_index} - 已切换账号登录")
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//input[@placeholder="请输入手机号码 / 客户编号 / 邮箱"]')))
+        except Exception as e:
+            log(f"账号 {account_index} - 账号登录按钮可能已默认选中: {e}")
+
         # 输入账号密码
         try:
-            # 确保在账号输入框出现
             user_input = wait.until(
                 EC.presence_of_element_located((By.XPATH, '//input[@placeholder="请输入手机号码 / 客户编号 / 邮箱"]'))
             )
@@ -705,7 +732,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             log(f"账号 {account_index} - 已输入账号密码")
         except Exception as e:
             log(f"账号 {account_index} - ❌ 登录输入框未找到: {e}")
-            result['oshwhub_status'] = '登录页面加载失败'
+            result['oshwhub_status'] = '登录失败'
             return result
 
         # 点击登录
@@ -720,52 +747,88 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             result['oshwhub_status'] = '登录失败'
             return result
 
-        # 3. 处理阿里云滑块验证 (修改点：新增智能滑块处理)
-        # 验证码通常在点击登录后弹出，或者直接嵌入在页面中
-        time.sleep(1) # 给验证码弹出一点时间
-        solve_aliyun_captcha(driver, account_index)
-
-        # 4. 检查登录结果 (密码错误 或 跳转成功)
-        
-        # 立即检查密码错误提示
+        # 立即检查密码错误提示（点击登录按钮后）
         time.sleep(1)  # 给错误提示一点时间显示
         if check_password_error(driver, account_index):
             result['password_error'] = True
             result['oshwhub_status'] = '密码错误'
             return result
 
+        # 处理滑块验证
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".btn_slide")))
+        try:
+            slider = wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn_slide"))
+            )
+            
+            track = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".nc_scale"))
+            )
+            
+            track_width = track.size['width']
+            slider_width = slider.size['width']
+            move_distance = track_width - slider_width - 10
+            
+            log(f"账号 {account_index} - 检测到滑块验证码，滑动距离: {move_distance}px")
+            
+            actions = ActionChains(driver)
+            actions.click_and_hold(slider).perform()
+            time.sleep(0.5)
+            
+            quick_distance = int(move_distance * random.uniform(0.6, 0.8))
+            slow_distance = move_distance - quick_distance
+            
+            y_offset1 = random.randint(-2, 2)
+            actions.move_by_offset(quick_distance, y_offset1).perform()
+            time.sleep(random.uniform(0.1, 0.3))
+            
+            y_offset2 = random.randint(-2, 2)
+            actions.move_by_offset(slow_distance, y_offset2).perform()
+            time.sleep(random.uniform(0.05, 0.15))
+            
+            actions.release().perform()
+            log(f"账号 {account_index} - 滑块拖动完成")
+            
+            # 滑块验证后立即检查密码错误提示
+            time.sleep(1)  # 给错误提示一点时间显示
+            if check_password_error(driver, account_index):
+                result['password_error'] = True
+                result['oshwhub_status'] = '密码错误'
+                return result
+                
+            WebDriverWait(driver, 10).until(lambda d: "oshwhub.com" in d.current_url and "passport.jlc.com" not in d.current_url)
+            
+        except Exception as e:
+            log(f"账号 {account_index} - 滑块验证处理: {e}")
+            # 滑块验证失败后检查密码错误
+            time.sleep(1)
+            if check_password_error(driver, account_index):
+                result['password_error'] = True
+                result['oshwhub_status'] = '密码错误'
+                return result
+
         # 等待跳转
         log(f"账号 {account_index} - 等待登录跳转...")
-        max_wait = 20
+        max_wait = 15
         jumped = False
         for i in range(max_wait):
             current_url = driver.current_url
             
-            # 检查是否成功跳转回签到页面 (URL变为 oshwhub.com 且不再是 passport)
+            # 检查是否成功跳转回签到页面
             if "oshwhub.com" in current_url and "passport.jlc.com" not in current_url:
-                log(f"账号 {account_index} - ✅ 成功跳转回签到页面")
+                log(f"账号 {account_index} - 成功跳转回签到页面")
                 jumped = True
                 break
-            
-            # 循环中再次检查密码错误，因为有时候验证码过后才会提示错误
-            if i % 3 == 0:
-                if check_password_error(driver, account_index):
-                    result['password_error'] = True
-                    result['oshwhub_status'] = '密码错误'
-                    return result
-                    
-                # 再次尝试检测滑块，有时候滑块出来的慢
-                solve_aliyun_captcha(driver, account_index)
             
             time.sleep(1)
         
         if not jumped:
             current_title = driver.title
-            log(f"账号 {account_index} - ❌ 跳转超时，当前URL: {driver.current_url}")
+            log(f"账号 {account_index} - ❌ 跳转超时，当前页面标题: {current_title}")
             result['oshwhub_status'] = '跳转失败'
             return result
 
-        # 3. 获取用户昵称 (后续逻辑保持不变)
+        # 3. 获取用户昵称
         time.sleep(1)
         nickname = get_user_nickname_from_api(driver, account_index)
         if nickname:
